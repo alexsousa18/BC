@@ -1,0 +1,145 @@
+<header class="cabecera">
+  <div>
+    <h1>DANA Solidaria</h1>
+    <p>Crowdfunding transparente con Ethereum (Sepolia) + IPFS</p>
+  </div>
+  <button class="btn" *ngIf="!cuenta" (click)="conectar()" [disabled]="ocupado">Conectar MetaMask</button>
+  <span class="cuenta" *ngIf="cuenta">🟢 {{ corta(cuenta) }}</span>
+</header>
+
+<nav class="pestanas" *ngIf="cuenta">
+  <button [class.activa]="vista === 'campanas'" (click)="cambiarVista('campanas')">Campañas</button>
+  <button [class.activa]="vista === 'crear'" (click)="cambiarVista('crear')">Crear campaña</button>
+  <button [class.activa]="vista === 'ej1'" (click)="cambiarVista('ej1')">Ejercicio 1 (IpfsStorage)</button>
+</nav>
+
+<main>
+  <div class="cargando" *ngIf="ocupado"><span class="spinner"></span> {{ pasoActual }}</div>
+
+  <div class="aviso" *ngIf="aviso" [ngClass]="aviso.tipo">
+    {{ aviso.texto }}
+    <a *ngIf="aviso.enlace" [href]="aviso.enlace" target="_blank" rel="noopener">Ver transacción en Etherscan ↗</a>
+  </div>
+
+  <section class="tarjeta" *ngIf="!cuenta">
+    <h2>Bienvenido</h2>
+    <p>Conecta MetaMask (red Sepolia) para ver las campañas, donar o crear una nueva.</p>
+    <p class="nota">Requisitos: nodo IPFS en <code>localhost:5001</code> con CORS habilitado para <code>http://localhost:4200</code>.</p>
+  </section>
+
+  <!-- ============================ EJERCICIO 1 ============================ -->
+  <section class="tarjeta" *ngIf="cuenta && vista === 'ej1'">
+    <h2>Ejercicio 1: subir un fichero a IPFS y guardar su CID</h2>
+    <p>Sube el fichero al nodo IPFS local y llama a <code>setFileIPFS(cid)</code> del contrato IpfsStorage.</p>
+    <div class="fila">
+      <input type="file" (change)="ej1Fichero = ficheroDe($event)" />
+      <button class="btn" (click)="ej1Subir()" [disabled]="!ej1Fichero || ocupado">Subir</button>
+    </div>
+    <p *ngIf="ej1Cid">
+      CID subido: <code>{{ ej1Cid }}</code> ·
+      <a [href]="gateway + ej1Cid" target="_blank" rel="noopener">abrir en el gateway ↗</a>
+    </p>
+    <hr />
+    <div class="fila">
+      <button class="btn secundario" (click)="ej1Leer()" [disabled]="ocupado">Leer userFiles(mi dirección)</button>
+      <code *ngIf="ej1CidGuardado">{{ ej1CidGuardado }}</code>
+    </div>
+  </section>
+
+  <!-- ============================ CREAR CAMPAÑA ============================ -->
+  <section class="tarjeta" *ngIf="cuenta && vista === 'crear'">
+    <h2>Nueva campaña</h2>
+    <p class="nota">La ficha se guarda como JSON en IPFS; en la blockchain solo se registra su CID, el título y la meta.</p>
+    <label>Título <input [(ngModel)]="nueva.titulo" placeholder="Reconstrucción del colegio de Paiporta" /></label>
+    <label>Descripción <textarea rows="4" [(ngModel)]="nueva.descripcion" placeholder="Qué se va a financiar y por qué"></textarea></label>
+    <label>Ubicación <input [(ngModel)]="nueva.ubicacion" placeholder="Paiporta, Valencia" /></label>
+    <label>Beneficiario (entidad u organización) <input [(ngModel)]="nueva.beneficiario" placeholder="AMPA del colegio / ayuntamiento…" /></label>
+    <label>Meta (ETH) <input type="number" step="0.001" min="0.001" [(ngModel)]="nuevaMeta" /></label>
+    <button class="btn" (click)="crearCampana()" [disabled]="!nueva.titulo || !nuevaMeta || ocupado">Crear campaña</button>
+  </section>
+
+  <!-- ============================ LISTADO ============================ -->
+  <ng-container *ngIf="cuenta && vista === 'campanas'">
+    <p class="vacio" *ngIf="campanas.length === 0 && !ocupado">Todavía no hay campañas. ¡Crea la primera!</p>
+
+    <section class="tarjeta campana" *ngFor="let c of campanas">
+      <div class="campana-cabecera" (click)="alternar(c)">
+        <div>
+          <h2>#{{ c.id }} · {{ c.titulo }}</h2>
+          <span class="etiqueta" [ngClass]="'estado' + c.estado">{{ estados[c.estado] }}</span>
+          <span class="etiqueta creador" *ngIf="esCreador(c)">Eres el creador</span>
+          <span class="etiqueta" *ngIf="c.tieneInformeDanos">📄 Informe de daños</span>
+        </div>
+        <span class="flecha">{{ abierta === c.id ? '▲' : '▼' }}</span>
+      </div>
+
+      <p *ngIf="c.ficha">{{ c.ficha.descripcion }}</p>
+      <p class="nota" *ngIf="c.ficha?.ubicacion">📍 {{ c.ficha?.ubicacion }} · Beneficiario: {{ c.ficha?.beneficiario }}</p>
+
+      <div class="barra"><div [style.width.%]="c.porcentaje"></div></div>
+      <p class="cifras">
+        <strong>{{ c.recaudado }}</strong> / {{ c.meta }} ETH ({{ c.porcentaje }}%) ·
+        Retirado: {{ c.retirado }} ETH · Justificado con facturas: {{ c.justificado }} ETH
+        <span *ngIf="c.miAportacion !== '0.0'"> · Tu aportación: {{ c.miAportacion }} ETH</span>
+      </p>
+
+      <div *ngIf="abierta === c.id" class="detalle">
+        <!-- Acciones -->
+        <div class="fila" *ngIf="c.estado === 0">
+          <input type="number" step="0.001" min="0.001" placeholder="0.001" [(ngModel)]="cantidadDonar[c.id]" />
+          <button class="btn" (click)="donar(c)" [disabled]="ocupado">Donar ETH</button>
+          <button class="btn peligro" *ngIf="esCreador(c)" (click)="cancelar(c)" [disabled]="ocupado">Cancelar campaña</button>
+        </div>
+        <div class="fila" *ngIf="c.estado === 1 && esCreador(c)">
+          <button class="btn" (click)="retirar(c)" [disabled]="ocupado || !c.tieneInformeDanos || c.retirado === c.recaudado">Retirar fondos</button>
+          <span class="nota" *ngIf="!c.tieneInformeDanos">Debes registrar antes un informe de daños.</span>
+        </div>
+        <div class="fila" *ngIf="c.estado === 2 && c.miAportacion !== '0.0'">
+          <button class="btn" (click)="reembolso(c)" [disabled]="ocupado">Reclamar reembolso ({{ c.miAportacion }} ETH)</button>
+        </div>
+
+        <!-- Documentos -->
+        <h3>Documentos registrados en la blockchain</h3>
+        <table *ngIf="docs.length > 0">
+          <tr><th>Tipo</th><th>Nombre</th><th>Importe</th><th>Fecha</th><th>CID (IPFS)</th></tr>
+          <tr *ngFor="let d of docs">
+            <td>{{ tiposDoc[d.tipo] }}</td>
+            <td>{{ d.nombre }}</td>
+            <td>{{ d.tipo === 2 ? d.importe + ' ETH' : '—' }}</td>
+            <td>{{ d.fecha | date: 'short' }}</td>
+            <td><a [href]="gateway + d.cid" target="_blank" rel="noopener"><code>{{ corta(d.cid) }}</code></a></td>
+          </tr>
+        </table>
+
+        <!-- Subir documento (solo creador) -->
+        <div class="subir" *ngIf="esCreador(c) && c.estado !== 2">
+          <h3>Registrar documento justificativo</h3>
+          <div class="fila">
+            <select [(ngModel)]="docTipo">
+              <option [ngValue]="1">Informe de daños</option>
+              <option [ngValue]="2" [disabled]="c.estado !== 1">Factura (tras retirar fondos)</option>
+              <option [ngValue]="3">Informe final</option>
+            </select>
+            <input placeholder="Nombre (opcional)" [(ngModel)]="docNombre" />
+            <input *ngIf="docTipo === 2" type="number" step="0.0001" placeholder="Importe ETH" [(ngModel)]="docImporte" />
+          </div>
+          <div class="fila">
+            <input type="file" (change)="docFichero = ficheroDe($event)" />
+            <button class="btn" (click)="registrarDoc(c)" [disabled]="!docFichero || ocupado || (docTipo === 2 && !docImporte)">Subir y registrar</button>
+          </div>
+        </div>
+
+        <!-- Verificación -->
+        <div class="subir">
+          <h3>Verificar la autenticidad de un documento</h3>
+          <p class="nota">Selecciona un fichero: se calcula su CID (sin subirlo) y se compara con los registrados en el contrato.</p>
+          <div class="fila">
+            <input type="file" (change)="verifFichero = ficheroDe($event)" />
+            <button class="btn secundario" (click)="verificar()" [disabled]="!verifFichero || ocupado">Verificar</button>
+          </div>
+          <p *ngIf="verifResultado">{{ verifResultado }}</p>
+        </div>
+      </div>
+    </section>
+  </ng-container>
+</main>
